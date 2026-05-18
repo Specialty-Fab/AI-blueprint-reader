@@ -1,0 +1,7 @@
+streamlit
+pytesseract
+opencv-python
+pillow
+pandas
+pdf2image
+pytest
