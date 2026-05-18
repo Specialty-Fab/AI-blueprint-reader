@@ -7,6 +7,7 @@ from parsers.dimensions import extract_dimensions
 from parsers.gdnt import extract_gdnt
 from exporters.job_traveler import build_job_traveler
 from utils.image_preprocess import preprocess_image
+from utils.pdf_loader import load_pdf
 
 st.set_page_config(
     page_title="AI Blueprint Reader",
@@ -17,13 +18,24 @@ st.title("AI Blueprint Reader")
 st.caption("Upload a blueprint, review uncertain reads, edit fields, then export a job traveler.")
 
 uploaded = st.file_uploader(
-    "Upload blueprint image",
-    type=["png", "jpg", "jpeg"]
+    "Upload blueprint image or PDF",
+    type=["png", "jpg", "jpeg", "pdf"]
 )
 
 if uploaded:
 
-    image = Image.open(uploaded).convert("RGB")
+    if uploaded.type == "application/pdf":
+        pages = load_pdf(uploaded)
+
+        page_number = st.selectbox(
+            "Select PDF page",
+            range(1, len(pages) + 1)
+        )
+
+        image = pages[page_number - 1].convert("RGB")
+
+    else:
+        image = Image.open(uploaded).convert("RGB")
 
     left_col, right_col = st.columns([1.2, 1])
 
@@ -158,4 +170,4 @@ if uploaded:
         )
 
 else:
-    st.info("Upload a blueprint image to begin.")
+    st.info("Upload a blueprint image or PDF to begin.")
