@@ -5,6 +5,7 @@ from ocr import run_ocr
 from parsers.title_block import extract_title_block
 from parsers.dimensions import extract_dimensions
 from parsers.gdnt import extract_gdnt
+from exporters.job_traveler import build_job_traveler
 
 st.set_page_config(
     page_title="AI Blueprint Reader",
@@ -57,3 +58,23 @@ if uploaded:
     gdnt = extract_gdnt(full_text)
 
     st.json(gdnt)
+
+    st.subheader("Job Traveler Export")
+
+    traveler = build_job_traveler(
+        title_block,
+        dimensions,
+        gdnt
+    )
+
+    st.dataframe(
+        traveler,
+        use_container_width=True
+    )
+
+    st.download_button(
+        "Download Job Traveler CSV",
+        traveler.to_csv(index=False),
+        file_name="job_traveler.csv",
+        mime="text/csv"
+    )
