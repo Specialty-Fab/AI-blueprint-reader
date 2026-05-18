@@ -33,6 +33,12 @@ if uploaded:
 
     words = run_ocr(image)
 
+    low_confidence = []
+
+    for w in words:
+        if w["confidence"] < 85:
+            low_confidence.append(w)
+
     full_text = " ".join([
         w["text"] for w in words
     ])
@@ -40,6 +46,23 @@ if uploaded:
     st.success(
         f"OCR found {len(words)} text elements"
     )
+
+    st.subheader("Review Required")
+
+    if low_confidence:
+        st.warning(
+            f"{len(low_confidence)} OCR items are below 85% confidence"
+        )
+
+        st.dataframe(
+            low_confidence,
+            use_container_width=True
+        )
+
+    else:
+        st.success(
+            "All OCR items passed confidence review"
+        )
 
     st.subheader("Title Block")
 
