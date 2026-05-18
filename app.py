@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 st.title("AI Blueprint Reader")
-st.caption("Upload a blueprint, review uncertain reads, then export a job traveler.")
+st.caption("Upload a blueprint, review uncertain reads, edit fields, then export a job traveler.")
 
 uploaded = st.file_uploader(
     "Upload blueprint image",
@@ -22,7 +22,7 @@ uploaded = st.file_uploader(
 
 if uploaded:
 
-    image = Image.open(uploaded)
+    image = Image.open(uploaded).convert("RGB")
 
     left_col, right_col = st.columns([1.2, 1])
 
@@ -37,11 +37,12 @@ if uploaded:
     with right_col:
         st.subheader("Extraction Summary")
 
-        words = run_ocr(image)
+        with st.spinner("Reading blueprint..."):
+            words = run_ocr(image)
 
         low_confidence = [
             w for w in words
-            if w["confidence"] < 85
+            if w.get("confidence", 0) < 85
         ]
 
         full_text = " ".join([
@@ -83,21 +84,37 @@ if uploaded:
 
     with tab_title:
         st.subheader("Title Block Fields")
-        st.json(title_block)
+        st.caption("Edit these before exporting the job traveler.")
+
+        edited_title_block = {}
+
+        for key, value in title_block.items():
+            edited_title_block[key] = st.text_input(
+                key.replace("_", " ").title(),
+                value
+            )
 
     with tab_dims:
         st.subheader("Detected Dimensions")
-        st.json(dimensions)
+
+        if dimensions:
+            st.json(dimensions)
+        else:
+            st.info("No dimensions detected yet.")
 
     with tab_gdnt:
         st.subheader("GD&T Candidates")
-        st.json(gdnt)
+
+        if gdnt:
+            st.json(gdnt)
+        else:
+            st.info("No GD&T candidates detected yet.")
 
     with tab_export:
         st.subheader("Job Traveler Export")
 
         traveler = build_job_traveler(
-            title_block,
+            edited_title_block,
             dimensions,
             gdnt
         )
@@ -113,5 +130,20 @@ if uploaded:
             file_name="job_traveler.csv",
             mime="text/csv"
         )
+
+        reviewed_data = {
+            "title_block": edited_title_block,
+            "dimensions": dimensions,
+            "gdnt": gdnt,
+            "low_confidence_items": low_confidence
+        }
+
+        st.download_button(
+            "Download Reviewed JSON",
+            str(reviewed_data),
+            file_name="reviewed_extraction.json",
+            mime="application/json"
+        )
+
 else:
     st.info("Upload a blueprint image to begin.")
