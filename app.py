@@ -6,6 +6,7 @@ from parsers.title_block import extract_title_block
 from parsers.dimensions import extract_dimensions
 from parsers.gdnt import extract_gdnt
 from exporters.job_traveler import build_job_traveler
+from utils.image_preprocess import preprocess_image
 
 st.set_page_config(
     page_title="AI Blueprint Reader",
@@ -28,6 +29,7 @@ if uploaded:
 
     with left_col:
         st.subheader("Blueprint Preview")
+
         st.image(
             image,
             caption="Uploaded Blueprint",
@@ -37,8 +39,11 @@ if uploaded:
     with right_col:
         st.subheader("Extraction Summary")
 
-        with st.spinner("Reading blueprint..."):
-            words = run_ocr(image)
+        with st.spinner("Cleaning image and reading blueprint..."):
+
+            processed_image = preprocess_image(image)
+
+            words = run_ocr(processed_image)
 
         low_confidence = [
             w for w in words
@@ -58,6 +63,13 @@ if uploaded:
             st.success("All OCR items passed confidence review.")
 
     st.divider()
+
+    with st.expander("Show processed OCR image"):
+        st.image(
+            processed_image,
+            caption="Image cleaned for OCR",
+            use_container_width=True
+        )
 
     tab_review, tab_title, tab_dims, tab_gdnt, tab_export = st.tabs([
         "Review",
