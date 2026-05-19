@@ -2,84 +2,56 @@ import re
 
 
 WELD_WORDS = [
-    "GMAW",
-    "GTAW",
-    "WELD",
-    "ROOT",
-    "PASS",
-    "PASSES",
-    "SEAL",
-    "NOTE",
-    "SEE",
-    "MIN",
+    "GMAW", "GTAW", "WELD", "ROOT", "PASS", "PASSES",
+    "SEAL", "NOTE", "SEE", "MIN"
 ]
 
 WEIGHT_WORDS = [
-    "WT",
-    "WEIGHT",
-    "KGS",
-    "KG",
-    "LBS",
-    "LB",
-    "UNIT",
+    "WT", "WEIGHT", "KGS", "KG", "LBS", "LB", "UNIT"
 ]
 
 
-def get_word(words, index):
-    if 0 <= index < len(words):
-        return words[index].get("text", "").strip()
-    return ""
+def normalize(text):
+    return text.upper().replace("O", "0").strip()
 
 
-def get_context(words, index, window=5):
-    start = max(index - window, 0)
-    end = min(index + window + 1, len(words))
+def is_bad_context(text):
+    upper = text.upper()
 
-    return " ".join([
-        words[i].get("text", "")
-        for i in range(start, end)
-    ]).upper()
+    if any(word in upper for word in WELD_WORDS):
+        return True
+
+    if any(word in upper for word in WEIGHT_WORDS):
+        return True
+
+    if re.search(r"\d+-\d+-\d+", upper):
+        return True
+
+    return False
 
 
 def merge_box(items):
     x1 = min(int(item.get("x", 0)) for item in items)
     y1 = min(int(item.get("y", 0)) for item in items)
-
-    x2 = max(
-        int(item.get("x", 0)) + int(item.get("width", 0))
-        for item in items
-    )
-
-    y2 = max(
-        int(item.get("y", 0)) + int(item.get("height", 0))
-        for item in items
-    )
+    x2 = max(int(item.get("x", 0)) + int(item.get("width", 0)) for item in items)
+    y2 = max(int(item.get("y", 0)) + int(item.get("height", 0)) for item in items)
 
     return {
         "x": x1,
         "y": y1,
         "width": x2 - x1,
         "height": y2 - y1,
-        "confidence": min(
-            float(item.get("confidence", 0))
-            for item in items
-        )
+        "confidence": min(float(item.get("confidence", 0)) for item in items)
     }
 
 
-def add_dimension(results, dim_type, raw_text, items):
-
+def add_result(results, dim_type, raw_text, items):
     raw_text = raw_text.strip()
 
     if not raw_text:
         return
 
-    existing = [
-        row["raw_text"]
-        for row in results
-    ]
-
-    if raw_text in existing:
+    if raw_text in [row["raw_text"] for row in results]:
         return
 
     box = merge_box(items)
@@ -95,192 +67,132 @@ def add_dimension(results, dim_type, raw_text, items):
     })
 
 
-def is_number(text):
-    return bool(
-        re.fullmatch(r"\d+(\.\d+)?", text.strip())
+def group_words_into_lines(words, y_tolerance=16):
+    sorted_words = sorted(
+        words,
+        key=lambda item: (
+            int(item.get("y", 0)),
+            int(item.get("x", 0))
+        )
     )
 
+    lines = []
 
-def is_weld_spec(text):
-    return bool(
-        re.fullmatch(r"\d+-\d+-\d+", text.strip())
-    )
-
-
-def is_weight_context(words, index):
-
-    context = get_context(words, index)
-
-    return any(
-        word in context
-        for word in WEIGHT_WORDS
-    )
-
-
-def is_weld_context(words, index):
-
-    context = get_context(words, index, window=3)
-
-    return any(
-        word in context
-        for word in WELD_WORDS
-    )
-
-
-def extract_dimensions(words):
-
-    results = []
-
-    for i, item in enumerate(words):
-
-        text = item.get("text", "").strip()
-        upper = text.upper()
+    for word in sorted_words:
+        text = word.get("text", "").strip()
 
         if not text:
             continue
 
-        if is_weld_spec(text):
-            continue
+        y = int(word.get("y", 0))
 
-        if is_weight_context(words, i):
-            continue
+        placed = False
 
-        if is_weld_context(words, i):
-            continue
+        for line in lines:
+            line_y = line["y"]
 
-        # -----------------------------------------
-        # 154 DIA HOLE / 281 DIA HOLE
-        # -----------------------------------------
+            if abs(y - line_y) <= y_tolerance:
+                line["words"].append(word)
+                line["y"] = int((line["y"] + y) / 2)
+                placed = True
+                break
 
-        if is_number(text):
+        if not placed:
+            lines.append({
+                "y": y,
+                "words": [word]
+            })
 
-            next_1 = get_word(words, i + 1).upper()
-            next_2 = get_word(words, i + 2).upper()
+    for line in lines:
+        line["words"] = sorted(
+            line["words"],
+            key=lambda item: int(item.get("x", 0))
+        )
 
-            if next_1 == "DIA":
+    return lines
 
-                merged_items = [
-                    item,
-                    words[i + 1]
-                ]
 
-                merged_text = f"{text} DIA"
+def extract_from_line(results, line_words):
+    line_text = " ".join([
+        word.get("text", "").strip()
+        for word in line_words
+    ])
 
-                if next_2 == "HOLE":
+    clean = normalize(line_text)
 
-                    merged_items.append(
-                        words[i + 2]
-                    )
+    if is_bad_context(clean):
+        return
 
-                    merged_text += " HOLE"
+    # Hole diameters: 281 DIA HOLE, 154 DIA HOLE
+    for match in re.finditer(r"\b\d+(\.\d+)?\s+DIA\s+HOLE\b", clean):
+        add_result(
+            results,
+            "diameter",
+            match.group(0),
+            line_words
+        )
 
-                add_dimension(
-                    results,
-                    "diameter",
-                    merged_text,
-                    merged_items
-                )
-
-                continue
-
-        # -----------------------------------------
-        # 30° / 45° / 60°
-        # -----------------------------------------
-
-        if re.fullmatch(r"\d+\s*°", text):
-
-            add_dimension(
+    # Diameter without HOLE
+    for match in re.finditer(r"\b\d+(\.\d+)?\s+DIA\b", clean):
+        if "HOLE" not in match.group(0):
+            add_result(
                 results,
-                "angle",
-                text.replace(" ", ""),
-                [item]
+                "diameter",
+                match.group(0),
+                line_words
             )
 
+    # Angles: 30°, 60°, 45°
+    for match in re.finditer(r"\b(30|45|60|90)\s*°?\b", clean):
+        add_result(
+            results,
+            "angle",
+            f"{match.group(1)}°",
+            line_words
+        )
+
+    # Radius: 285.8R or 285.8 R
+    for match in re.finditer(r"\b\d+(\.\d+)?\s*R\b", clean):
+        add_result(
+            results,
+            "radius",
+            match.group(0).replace(" ", ""),
+            line_words
+        )
+
+    # Feature size: 34 x 3
+    for match in re.finditer(r"\b\d+(\.\d+)?\s*[xX×]\s*\d+(\.\d+)?\b", clean):
+        add_result(
+            results,
+            "feature_size",
+            match.group(0).replace("×", "x"),
+            line_words
+        )
+
+    # Large linear: 1800, but not weight/title block
+    for match in re.finditer(r"\b\d{3,5}\b", clean):
+        value = match.group(0)
+
+        if value in ["186"]:
             continue
 
-        if text in ["30", "45", "60", "90"]:
+        add_result(
+            results,
+            "linear",
+            value,
+            line_words
+        )
 
-            add_dimension(
-                results,
-                "angle",
-                f"{text}°",
-                [item]
-            )
 
-            continue
+def extract_dimensions(words):
+    results = []
 
-        # -----------------------------------------
-        # 285.8R
-        # -----------------------------------------
+    lines = group_words_into_lines(words)
 
-        if re.fullmatch(
-            r"\d+(\.\d+)?R",
-            upper
-        ):
-
-            add_dimension(
-                results,
-                "radius",
-                text,
-                [item]
-            )
-
-            continue
-
-        # OCR split radius: 285.8 + R
-
-        if is_number(text):
-
-            next_1 = get_word(words, i + 1).upper()
-
-            if next_1 == "R":
-
-                add_dimension(
-                    results,
-                    "radius",
-                    f"{text}R",
-                    [item, words[i + 1]]
-                )
-
-                continue
-
-        # -----------------------------------------
-        # 34 x 3
-        # -----------------------------------------
-
-        if is_number(text):
-
-            middle = get_word(words, i + 1).lower()
-            last = get_word(words, i + 2)
-
-            if middle in ["x", "×"] and is_number(last):
-
-                add_dimension(
-                    results,
-                    "feature_size",
-                    f"{text} x {last}",
-                    [
-                        item,
-                        words[i + 1],
-                        words[i + 2]
-                    ]
-                )
-
-                continue
-
-        # -----------------------------------------
-        # Large linear dimensions
-        # -----------------------------------------
-
-        if re.fullmatch(r"\d{3,5}", text):
-
-            add_dimension(
-                results,
-                "linear",
-                text,
-                [item]
-            )
-
-            continue
+    for line in lines:
+        extract_from_line(
+            results,
+            line["words"]
+        )
 
     return results
