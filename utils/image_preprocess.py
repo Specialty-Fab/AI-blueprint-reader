@@ -1,43 +1,51 @@
 import cv2
 import numpy as np
-from PIL import Image, ImageEnhance
+from PIL import Image, ImageEnhance, ImageFilter
 
 
 def preprocess_image(image):
-    # Convert to grayscale
-    gray_image = image.convert("L")
 
-    # Boost contrast before OpenCV processing
-    contrast = ImageEnhance.Contrast(gray_image).enhance(1.8)
-    sharp = ImageEnhance.Sharpness(contrast).enhance(1.6)
+    # Convert to grayscale
+    gray = image.convert("L")
+
+    # Increase contrast
+    contrast = ImageEnhance.Contrast(gray).enhance(2.2)
+
+    # Slight sharpen
+    sharp = ImageEnhance.Sharpness(contrast).enhance(2.4)
+
+    # Extra edge sharpening
+    sharp = sharp.filter(
+        ImageFilter.SHARPEN
+    )
 
     img = np.array(sharp)
 
-    # Light denoise only, so small text survives
+    # Very light denoise
     denoised = cv2.fastNlMeansDenoising(
         img,
         None,
-        7,
+        4,
         7,
         21
     )
 
-    # Adaptive threshold for uneven scans
-    cleaned = cv2.adaptiveThreshold(
+    # Adaptive threshold tuned for blueprints
+    thresh = cv2.adaptiveThreshold(
         denoised,
         255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
         cv2.THRESH_BINARY,
-        15,
-        8
+        21,
+        4
     )
 
-    # Tiny morphological open to remove specks without eating letters
+    # Small morphology cleanup
     kernel = np.ones((1, 1), np.uint8)
 
     cleaned = cv2.morphologyEx(
-        cleaned,
-        cv2.MORPH_OPEN,
+        thresh,
+        cv2.MORPH_CLOSE,
         kernel
     )
 
