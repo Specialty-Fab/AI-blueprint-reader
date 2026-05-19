@@ -4,6 +4,7 @@ from PIL import Image
 
 
 def preprocess_image(image):
+
     img = np.array(image)
 
     gray = cv2.cvtColor(
@@ -11,17 +12,23 @@ def preprocess_image(image):
         cv2.COLOR_RGB2GRAY
     )
 
-    blurred = cv2.GaussianBlur(
+    denoised = cv2.fastNlMeansDenoising(
         gray,
-        (5, 5),
-        0
+        None,
+        10,
+        7,
+        21
     )
 
-    thresh = cv2.threshold(
-        blurred,
-        0,
+    adaptive = cv2.adaptiveThreshold(
+        denoised,
         255,
-        cv2.THRESH_BINARY + cv2.THRESH_OTSU
-    )[1]
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY,
+        11,
+        2
+    )
 
-    return Image.fromarray(thresh)
+    cleaned = Image.fromarray(adaptive)
+
+    return cleaned
