@@ -1,5 +1,6 @@
 import re
 
+
 def extract_dimensions(text):
     patterns = [
         ("linear", r"\b\d+\.\d+\s*(?:±|\+/-)\s*\.?\d+\b"),
