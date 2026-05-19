@@ -1,7 +1,7 @@
 import re
 
-def extract_gdnt(text):
 
+def extract_gdnt(text):
     patterns = [
         ("position", r"(?:⌖|POSITION|POS)\s*\.?\d+\.?\d*\s*[A-Z]?\s*[A-Z]?"),
         ("flatness", r"(?:⌔|FLATNESS)\s*\.?\d+\.?\d*"),
