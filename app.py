@@ -13,6 +13,7 @@ from utils.image_preprocess import preprocess_image
 
 
 def draw_review_box(image, item, label="Review this area", color="red"):
+
     marked = image.convert("RGB").copy()
     draw = ImageDraw.Draw(marked)
 
@@ -31,27 +32,39 @@ def draw_review_box(image, item, label="Review this area", color="red"):
     ]
 
     draw.rectangle(box, outline=color, width=4)
-    draw.text((box[0], max(box[1] - 22, 0)), label, fill=color)
+
+    draw.text(
+        (box[0], max(box[1] - 22, 0)),
+        label,
+        fill=color
+    )
 
     return marked
 
 
 def draw_qc_callouts(image, dimensions, checked_status=None):
+
     marked = image.convert("RGB").copy()
     draw = ImageDraw.Draw(marked)
 
     checked_status = checked_status or {}
 
     for index, item in enumerate(dimensions, start=1):
+
         x = int(item.get("x", 0))
         y = int(item.get("y", 0))
         width = int(item.get("width", 80))
         height = int(item.get("height", 24))
 
         qc_id = f"QC-{index:03}"
-        checked = checked_status.get(qc_id, False)
+
+        checked = checked_status.get(
+            qc_id,
+            False
+        )
 
         color = "green" if checked else "orange"
+
         mark = "✓" if checked else "□"
 
         padding = 10
@@ -63,7 +76,12 @@ def draw_qc_callouts(image, dimensions, checked_status=None):
             y + height + padding,
         ]
 
-        draw.rectangle(box, outline=color, width=4)
+        draw.rectangle(
+            box,
+            outline=color,
+            width=4
+        )
+
         draw.text(
             (box[0], max(box[1] - 24, 0)),
             f"{mark} {qc_id}",
@@ -79,7 +97,10 @@ st.set_page_config(
 )
 
 st.title("AI Blueprint Reader")
-st.caption("Upload a blueprint image, review uncertain reads, edit fields, then export a job traveler.")
+
+st.caption(
+    "Upload a blueprint image, review OCR results, edit fields, and generate QC reports."
+)
 
 uploaded = st.file_uploader(
     "Upload blueprint image",
@@ -87,12 +108,15 @@ uploaded = st.file_uploader(
 )
 
 if uploaded:
+
     image = Image.open(uploaded).convert("RGB")
 
     left_col, right_col = st.columns([1.2, 1])
 
     with left_col:
+
         st.subheader("Blueprint Preview")
+
         st.image(
             image,
             caption="Uploaded Blueprint",
@@ -100,16 +124,27 @@ if uploaded:
         )
 
     with right_col:
+
         st.subheader("Extraction Summary")
 
         try:
-            with st.spinner("Cleaning image and reading blueprint..."):
+
+            with st.spinner(
+                "Cleaning image and reading blueprint..."
+            ):
+
                 processed_image = preprocess_image(image)
+
                 words = run_ocr(processed_image)
 
         except Exception as error:
-            st.error("OCR failed. Check that Tesseract is installed and available.")
+
+            st.error(
+                "OCR failed. Check that Tesseract is installed and available."
+            )
+
             st.exception(error)
+
             st.stop()
 
         low_confidence = [
@@ -123,17 +158,32 @@ if uploaded:
             if w.get("text", "").strip() != ""
         ])
 
-        st.metric("OCR Text Items", len(words))
-        st.metric("Needs Review", len(low_confidence))
+        st.metric(
+            "OCR Text Items",
+            len(words)
+        )
+
+        st.metric(
+            "Needs Review",
+            len(low_confidence)
+        )
 
         if low_confidence:
-            st.warning("Some OCR results need human review.")
+
+            st.warning(
+                "Some OCR results need human review."
+            )
+
         else:
-            st.success("All OCR items passed confidence review.")
+
+            st.success(
+                "All OCR items passed confidence review."
+            )
 
     st.divider()
 
     with st.expander("Show processed OCR image"):
+
         st.image(
             processed_image,
             caption="Image cleaned for OCR",
@@ -150,29 +200,39 @@ if uploaded:
     ])
 
     title_block = extract_title_block(full_text)
-    dimensions = extract_dimensions(full_text)
+
+    dimensions = extract_dimensions(words)
+
     gdnt = extract_gdnt(full_text)
 
     reviewed_items = []
+
     qc_checked_items = []
+
     qc_checked_status = {}
 
     with tab_review:
+
         st.subheader("Review Required")
-        st.caption("Click a review item to see where it appears on the processed image.")
 
         if low_confidence:
-            st.warning(
-                f"{len(low_confidence)} items need review. Most may be tiny marks, broken letters, or low-quality scan areas."
-            )
 
-            for index, item in enumerate(low_confidence, start=1):
+            for index, item in enumerate(
+                low_confidence,
+                start=1
+            ):
+
                 text = item.get("text", "")
-                confidence = item.get("confidence", 0)
+
+                confidence = item.get(
+                    "confidence",
+                    0
+                )
 
                 with st.expander(
                     f"Review item {index}: '{text}' - {confidence:.0f}% confidence"
                 ):
+
                     corrected_text = st.text_input(
                         "Correct this text if needed",
                         value=text,
@@ -180,7 +240,10 @@ if uploaded:
                     )
 
                     st.progress(
-                        min(max(confidence / 100, 0), 1)
+                        min(
+                            max(confidence / 100, 0),
+                            1
+                        )
                     )
 
                     marked_image = draw_review_box(
@@ -211,48 +274,73 @@ if uploaded:
                     })
 
         else:
-            st.success("No low-confidence OCR items found.")
+
+            st.success(
+                "No low-confidence OCR items found."
+            )
 
     with tab_title:
+
         st.subheader("Title Block Fields")
-        st.caption("Edit these before exporting the job traveler.")
 
         edited_title_block = {}
 
         for key, value in title_block.items():
+
             edited_title_block[key] = st.text_input(
                 key.replace("_", " ").title(),
                 value
             )
 
     with tab_dims:
+
         st.subheader("Detected Dimensions")
 
         if dimensions:
+
             st.json(dimensions)
+
         else:
-            st.info("No dimensions detected yet.")
-
-    with tab_qc:
-        st.subheader("QC Dimension Report")
-        st.caption("Orange boxes need checking. Green boxes are checked.")
-
-        qc_report = build_qc_report(dimensions)
-
-        if dimensions:
-            st.subheader("Drawing QC Preview")
 
             st.info(
-                "This preview marks each detected dimension on the processed drawing. "
-                "Check items below to turn callouts green."
+                "No dimensions detected yet."
             )
 
-            for index, item in enumerate(dimensions, start=1):
-                qc_id = f"QC-{index:03}"
-                callout = item.get("raw_text", "")
-                dim_type = item.get("type", "").title()
+    with tab_qc:
 
-                with st.expander(f"{qc_id} | {dim_type} | {callout}"):
+        st.subheader("QC Dimension Report")
+
+        st.caption(
+            "Orange boxes need checking. Green boxes are checked."
+        )
+
+        if dimensions:
+
+            qc_report = build_qc_report(
+                dimensions
+            )
+
+            for index, item in enumerate(
+                dimensions,
+                start=1
+            ):
+
+                qc_id = f"QC-{index:03}"
+
+                callout = item.get(
+                    "raw_text",
+                    ""
+                )
+
+                dim_type = item.get(
+                    "type",
+                    ""
+                ).title()
+
+                with st.expander(
+                    f"{qc_id} | {dim_type} | {callout}"
+                ):
+
                     checked = st.checkbox(
                         "QC checked",
                         key=f"qc_checked_{index}"
@@ -267,7 +355,11 @@ if uploaded:
 
                     pass_fail = st.selectbox(
                         "Pass / Fail",
-                        ["Needs Check", "Pass", "Fail"],
+                        [
+                            "Needs Check",
+                            "Pass",
+                            "Fail"
+                        ],
                         key=f"qc_pass_fail_{index}"
                     )
 
@@ -298,25 +390,33 @@ if uploaded:
                 use_container_width=True
             )
 
-            st.subheader("QC Checklist Table")
-
             st.dataframe(
                 qc_report,
                 use_container_width=True
             )
 
         else:
-            st.info("No dimensions detected yet.")
+
+            st.info(
+                "No dimensions detected yet."
+            )
 
     with tab_gdnt:
+
         st.subheader("GD&T Candidates")
 
         if gdnt:
+
             st.json(gdnt)
+
         else:
-            st.info("No GD&T candidates detected yet.")
+
+            st.info(
+                "No GD&T candidates detected yet."
+            )
 
     with tab_export:
+
         st.subheader("Job Traveler Export")
 
         traveler = build_job_traveler(
@@ -347,10 +447,16 @@ if uploaded:
 
         st.download_button(
             "Download Reviewed JSON",
-            json.dumps(reviewed_data, indent=2),
+            json.dumps(
+                reviewed_data,
+                indent=2
+            ),
             file_name="reviewed_extraction.json",
             mime="application/json"
         )
 
 else:
-    st.info("Upload a blueprint image to begin.")
+
+    st.info(
+        "Upload a blueprint image to begin."
+    )
