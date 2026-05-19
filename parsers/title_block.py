@@ -1,12 +1,16 @@
 import re
 
+
 def find_after(text, labels):
     for label in labels:
         pattern = rf"{label}[:\s\-#]*([A-Z0-9][A-Z0-9\-_.\/ ]{{0,40}})"
         match = re.search(pattern, text, re.IGNORECASE)
+
         if match:
             return match.group(1).strip()
+
     return ""
+
 
 def extract_title_block(text):
     return {
