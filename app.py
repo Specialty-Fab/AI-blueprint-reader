@@ -8,6 +8,7 @@ from parsers.title_block import extract_title_block
 from parsers.dimensions import extract_dimensions
 from parsers.gdnt import extract_gdnt
 from exporters.job_traveler import build_job_traveler
+from exporters.qc_report import build_qc_report
 from utils.image_preprocess import preprocess_image
 
 
@@ -110,10 +111,11 @@ if uploaded:
             use_container_width=True
         )
 
-    tab_review, tab_title, tab_dims, tab_gdnt, tab_export = st.tabs([
+    tab_review, tab_title, tab_dims, tab_qc, tab_gdnt, tab_export = st.tabs([
         "Review",
         "Title Block",
         "Dimensions",
+        "QC Report",
         "GD&T",
         "Export"
     ])
@@ -123,6 +125,7 @@ if uploaded:
     gdnt = extract_gdnt(full_text)
 
     reviewed_items = []
+    qc_checked_items = []
 
     with tab_review:
         st.subheader("Review Required")
@@ -204,6 +207,46 @@ if uploaded:
         else:
             st.info("No dimensions detected yet.")
 
+    with tab_qc:
+        st.subheader("QC Dimension Report")
+        st.caption("Review detected dimensions and mark completed QC checks.")
+
+        qc_report = build_qc_report(dimensions)
+
+        if dimensions:
+            for index, item in enumerate(dimensions, start=1):
+                callout = item.get("raw_text", "")
+                dim_type = item.get("type", "").title()
+
+                with st.expander(
+                    f"QC-{index:03} | {dim_type} | {callout}"
+                ):
+                    checked = st.checkbox(
+                        "QC checked",
+                        key=f"qc_checked_{index}"
+                    )
+
+                    notes = st.text_input(
+                        "Inspector notes",
+                        key=f"qc_notes_{index}"
+                    )
+
+                    qc_checked_items.append({
+                        "qc_id": f"QC-{index:03}",
+                        "dimension_type": dim_type,
+                        "callout": callout,
+                        "qc_checked": checked,
+                        "inspector_notes": notes
+                    })
+
+            st.dataframe(
+                qc_report,
+                use_container_width=True
+            )
+
+        else:
+            st.info("No dimensions detected yet.")
+
     with tab_gdnt:
         st.subheader("GD&T Candidates")
 
@@ -237,7 +280,8 @@ if uploaded:
             "title_block": edited_title_block,
             "dimensions": dimensions,
             "gdnt": gdnt,
-            "reviewed_low_confidence_items": reviewed_items
+            "reviewed_low_confidence_items": reviewed_items,
+            "qc_report": qc_checked_items
         }
 
         st.download_button(
