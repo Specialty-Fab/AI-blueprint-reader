@@ -62,7 +62,9 @@ def add_dimension(results, dim_type, raw_text, items):
     if not raw_text:
         return
 
-    if raw_text in [item["raw_text"] for item in results]:
+    existing = [row["raw_text"] for row in results]
+
+    if raw_text in existing:
         return
 
     box = merge_box(items)
@@ -78,24 +80,24 @@ def add_dimension(results, dim_type, raw_text, items):
     })
 
 
-def has_bad_context(words, index):
-    context = get_context(words, index)
-
-    if any(word in context for word in WELD_WORDS):
-        return True
-
-    if any(word in context for word in WEIGHT_WORDS):
-        return True
-
-    return False
+def is_weld_spec(text):
+    return bool(re.fullmatch(r"\d+-\d+-\d+", text.strip()))
 
 
 def is_number(text):
     return bool(re.fullmatch(r"\d+(\.\d+)?", text.strip()))
 
 
-def is_weld_spec(text):
-    return bool(re.fullmatch(r"\d+-\d+-\d+", text.strip()))
+def is_weight_context(words, index):
+    context = get_context(words, index, window=5)
+
+    return any(word in context for word in WEIGHT_WORDS)
+
+
+def is_weld_context(words, index):
+    context = get_context(words, index, window=3)
+
+    return any(word in context for word in WELD_WORDS)
 
 
 def extract_dimensions(words):
@@ -111,9 +113,10 @@ def extract_dimensions(words):
         if is_weld_spec(text):
             continue
 
-        if has_bad_context(words, i):
+        if is_weight_context(words, i):
             continue
 
+        # 154 DIA HOLE / 281 DIA HOLE
         if is_number(text):
             next_1 = get_word(words, i + 1).upper()
             next_2 = get_word(words, i + 2).upper()
@@ -129,6 +132,7 @@ def extract_dimensions(words):
                 add_dimension(results, "diameter", raw_text, items)
                 continue
 
+        # DIA 154
         if upper == "DIA" and i + 1 < len(words):
             next_text = get_word(words, i + 1)
 
@@ -141,37 +145,59 @@ def extract_dimensions(words):
                 )
                 continue
 
+        # 30°, 45°, 60°
         if re.fullmatch(r"\d+°", text):
-            add_dimension(results, "angle", text, [item])
+            if not is_weld_context(words, i):
+                add_dimension(results, "angle", text, [item])
             continue
 
-        if text in ["30", "45", "60", "90", "120", "180"]:
-            add_dimension(results, "angle", f"{text}°", [item])
+        # OCR sometimes reads degree callouts as plain numbers
+        if text in ["30", "45", "60", "90"]:
+            if not is_weld_context(words, i):
+                add_dimension(results, "angle", f"{text}°", [item])
             continue
 
-        if re.fullmatch(r"\d+(\.\d+)?R", upper) or re.fullmatch(r"R\d+(\.\d+)?", upper):
+        # 285.8R / R285.8
+        if re.fullmatch(r"\d+(\.\d+)?R", upper):
             add_dimension(results, "radius", text, [item])
             continue
 
+        if re.fullmatch(r"R\d+(\.\d+)?", upper):
+            add_dimension(results, "radius", text, [item])
+            continue
+
+        # OCR sometimes splits radius as 285.8 + R
+        if is_number(text) and i + 1 < len(words):
+            next_1 = get_word(words, i + 1).upper()
+
+            if next_1 == "R":
+                add_dimension(
+                    results,
+                    "radius",
+                    f"{text}R",
+                    [item, words[i + 1]]
+                )
+                continue
+
+        # 34 x 3 / 3 x 3
         if is_number(text) and i + 2 < len(words):
             middle = get_word(words, i + 1).lower()
             last = get_word(words, i + 2)
 
             if middle in ["x", "×"] and is_number(last):
-                add_dimension(
-                    results,
-                    "feature_size",
-                    f"{text} x {last}",
-                    [item, words[i + 1], words[i + 2]]
-                )
+                if not is_weld_context(words, i):
+                    add_dimension(
+                        results,
+                        "feature_size",
+                        f"{text} x {last}",
+                        [item, words[i + 1], words[i + 2]]
+                    )
                 continue
 
-        if re.fullmatch(r"\d+/\d+", text):
-            add_dimension(results, "fraction", text, [item])
-            continue
-
+        # 1800 trim dimension, but not weight/title block values
         if re.fullmatch(r"\d{3,5}", text):
-            add_dimension(results, "linear", text, [item])
+            if not is_weld_context(words, i):
+                add_dimension(results, "linear", text, [item])
             continue
 
     return results
