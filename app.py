@@ -12,7 +12,7 @@ from exporters.qc_report import build_qc_report
 from utils.image_preprocess import preprocess_image
 
 
-def draw_review_box(image, item):
+def draw_review_box(image, item, label="Review this area", color="red"):
     marked = image.convert("RGB").copy()
     draw = ImageDraw.Draw(marked)
 
@@ -30,8 +30,45 @@ def draw_review_box(image, item):
         y + height + padding,
     ]
 
-    draw.rectangle(box, outline="red", width=4)
-    draw.text((box[0], max(box[1] - 22, 0)), "Review this area", fill="red")
+    draw.rectangle(box, outline=color, width=4)
+    draw.text((box[0], max(box[1] - 22, 0)), label, fill=color)
+
+    return marked
+
+
+def draw_qc_callouts(image, dimensions, checked_status=None):
+    marked = image.convert("RGB").copy()
+    draw = ImageDraw.Draw(marked)
+
+    checked_status = checked_status or {}
+
+    for index, item in enumerate(dimensions, start=1):
+        x = int(item.get("x", 0))
+        y = int(item.get("y", 0))
+        width = int(item.get("width", 80))
+        height = int(item.get("height", 24))
+
+        qc_id = f"QC-{index:03}"
+        checked = checked_status.get(qc_id, False)
+
+        color = "green" if checked else "orange"
+        mark = "✓" if checked else "□"
+
+        padding = 10
+
+        box = [
+            max(x - padding, 0),
+            max(y - padding, 0),
+            x + width + padding,
+            y + height + padding,
+        ]
+
+        draw.rectangle(box, outline=color, width=4)
+        draw.text(
+            (box[0], max(box[1] - 24, 0)),
+            f"{mark} {qc_id}",
+            fill=color
+        )
 
     return marked
 
@@ -118,6 +155,7 @@ if uploaded:
 
     reviewed_items = []
     qc_checked_items = []
+    qc_checked_status = {}
 
     with tab_review:
         st.subheader("Review Required")
@@ -197,23 +235,31 @@ if uploaded:
 
     with tab_qc:
         st.subheader("QC Dimension Report")
-        st.caption("Every detected dimension is listed here for inspection review.")
+        st.caption("Orange boxes need checking. Green boxes are checked.")
 
         qc_report = build_qc_report(dimensions)
 
         if dimensions:
-            st.dataframe(
-                qc_report,
-                use_container_width=True
+            st.subheader("Drawing QC Preview")
+
+            st.info(
+                "This preview marks each detected dimension on the processed drawing. "
+                "Check items below to turn callouts green."
             )
 
             for index, item in enumerate(dimensions, start=1):
+                qc_id = f"QC-{index:03}"
                 callout = item.get("raw_text", "")
                 dim_type = item.get("type", "").title()
 
-                with st.expander(
-                    f"QC-{index:03} | {dim_type} | {callout}"
-                ):
+                with st.expander(f"{qc_id} | {dim_type} | {callout}"):
+                    checked = st.checkbox(
+                        "QC checked",
+                        key=f"qc_checked_{index}"
+                    )
+
+                    qc_checked_status[qc_id] = checked
+
                     measured_value = st.text_input(
                         "Measured value",
                         key=f"qc_measured_{index}"
@@ -231,13 +277,33 @@ if uploaded:
                     )
 
                     qc_checked_items.append({
-                        "qc_id": f"QC-{index:03}",
+                        "qc_id": qc_id,
                         "dimension_type": dim_type,
                         "dimension_callout": callout,
+                        "qc_checked": checked,
                         "measured_value": measured_value,
                         "pass_fail": pass_fail,
                         "inspector_notes": notes
                     })
+
+            qc_preview = draw_qc_callouts(
+                processed_image,
+                dimensions,
+                qc_checked_status
+            )
+
+            st.image(
+                qc_preview,
+                caption="QC callouts on processed drawing",
+                use_container_width=True
+            )
+
+            st.subheader("QC Checklist Table")
+
+            st.dataframe(
+                qc_report,
+                use_container_width=True
+            )
 
         else:
             st.info("No dimensions detected yet.")
