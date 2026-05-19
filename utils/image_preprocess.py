@@ -4,7 +4,6 @@ from PIL import Image
 
 
 def preprocess_image(image):
-
     img = np.array(image)
 
     gray = cv2.cvtColor(
@@ -25,6 +24,4 @@ def preprocess_image(image):
         cv2.THRESH_BINARY + cv2.THRESH_OTSU
     )[1]
 
-    cleaned = Image.fromarray(thresh)
-
-    return cleaned
+    return Image.fromarray(thresh)
