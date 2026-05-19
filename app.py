@@ -88,14 +88,57 @@ if uploaded:
     dimensions = extract_dimensions(full_text)
     gdnt = extract_gdnt(full_text)
 
+    reviewed_items = []
+
     with tab_review:
         st.subheader("Review Required")
+        st.caption("These are OCR reads that may need a quick human check before export.")
 
         if low_confidence:
-            st.dataframe(
-                low_confidence,
-                use_container_width=True
+            st.warning(
+                f"{len(low_confidence)} items need review. Most may be tiny marks, broken letters, or low-quality scan areas."
             )
+
+            for index, item in enumerate(low_confidence, start=1):
+                text = item.get("text", "")
+                confidence = item.get("confidence", 0)
+
+                with st.expander(
+                    f"Review item {index}: '{text}' - {confidence:.0f}% confidence"
+                ):
+                    corrected_text = st.text_input(
+                        "Correct this text if needed",
+                        value=text,
+                        key=f"review_text_{index}"
+                    )
+
+                    st.progress(
+                        min(max(confidence / 100, 0), 1)
+                    )
+
+                    st.caption(
+                        f"Location on print: X {item.get('x', '')}, "
+                        f"Y {item.get('y', '')}, "
+                        f"Width {item.get('width', '')}, "
+                        f"Height {item.get('height', '')}"
+                    )
+
+                    approved = st.checkbox(
+                        "Reviewed and approved",
+                        key=f"review_approved_{index}"
+                    )
+
+                    reviewed_items.append({
+                        "original_text": text,
+                        "corrected_text": corrected_text,
+                        "confidence": confidence,
+                        "approved": approved,
+                        "x": item.get("x", ""),
+                        "y": item.get("y", ""),
+                        "width": item.get("width", ""),
+                        "height": item.get("height", "")
+                    })
+
         else:
             st.success("No low-confidence OCR items found.")
 
@@ -152,7 +195,7 @@ if uploaded:
             "title_block": edited_title_block,
             "dimensions": dimensions,
             "gdnt": gdnt,
-            "low_confidence_items": low_confidence
+            "reviewed_low_confidence_items": reviewed_items
         }
 
         st.download_button(
