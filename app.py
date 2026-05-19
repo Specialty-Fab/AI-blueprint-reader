@@ -56,7 +56,11 @@ if uploaded:
 
     with left_col:
         st.subheader("Blueprint Preview")
-        st.image(image, caption="Uploaded Blueprint", use_container_width=True)
+        st.image(
+            image,
+            caption="Uploaded Blueprint",
+            use_container_width=True
+        )
 
     with right_col:
         st.subheader("Extraction Summary")
@@ -76,9 +80,10 @@ if uploaded:
             if w.get("confidence", 0) < 85
         ]
 
-        full_text = " ".join([
+        full_text = "\n".join([
             w.get("text", "")
             for w in words
+            if w.get("text", "").strip() != ""
         ])
 
         st.metric("OCR Text Items", len(words))
@@ -127,16 +132,23 @@ if uploaded:
                 text = item.get("text", "")
                 confidence = item.get("confidence", 0)
 
-                with st.expander(f"Review item {index}: '{text}' - {confidence:.0f}% confidence"):
+                with st.expander(
+                    f"Review item {index}: '{text}' - {confidence:.0f}% confidence"
+                ):
                     corrected_text = st.text_input(
                         "Correct this text if needed",
                         value=text,
                         key=f"review_text_{index}"
                     )
 
-                    st.progress(min(max(confidence / 100, 0), 1))
+                    st.progress(
+                        min(max(confidence / 100, 0), 1)
+                    )
 
-                    marked_image = draw_review_box(processed_image, item)
+                    marked_image = draw_review_box(
+                        processed_image,
+                        item
+                    )
 
                     st.image(
                         marked_image,
@@ -190,13 +202,18 @@ if uploaded:
         qc_report = build_qc_report(dimensions)
 
         if dimensions:
-            st.dataframe(qc_report, use_container_width=True)
+            st.dataframe(
+                qc_report,
+                use_container_width=True
+            )
 
             for index, item in enumerate(dimensions, start=1):
                 callout = item.get("raw_text", "")
                 dim_type = item.get("type", "").title()
 
-                with st.expander(f"QC-{index:03} | {dim_type} | {callout}"):
+                with st.expander(
+                    f"QC-{index:03} | {dim_type} | {callout}"
+                ):
                     measured_value = st.text_input(
                         "Measured value",
                         key=f"qc_measured_{index}"
@@ -242,7 +259,10 @@ if uploaded:
             gdnt
         )
 
-        st.dataframe(traveler, use_container_width=True)
+        st.dataframe(
+            traveler,
+            use_container_width=True
+        )
 
         st.download_button(
             "Download Job Traveler CSV",
