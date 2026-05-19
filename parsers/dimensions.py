@@ -14,11 +14,31 @@ WELD_WORDS = [
     "MIN",
 ]
 
+WEIGHT_WORDS = [
+    "WT",
+    "WEIGHT",
+    "KGS",
+    "KG",
+    "LBS",
+    "LB",
+    "UNIT",
+]
+
 
 def get_word(words, index):
     if 0 <= index < len(words):
         return words[index].get("text", "").strip()
     return ""
+
+
+def get_context(words, index, window=4):
+    start = max(index - window, 0)
+    end = min(index + window + 1, len(words))
+
+    return " ".join([
+        words[i].get("text", "")
+        for i in range(start, end)
+    ]).upper()
 
 
 def merge_box(items):
@@ -58,16 +78,16 @@ def add_dimension(results, dim_type, raw_text, items):
     })
 
 
-def has_weld_context(words, index, window=3):
-    start = max(index - window, 0)
-    end = min(index + window + 1, len(words))
+def has_bad_context(words, index):
+    context = get_context(words, index)
 
-    context = " ".join(
-        words[i].get("text", "")
-        for i in range(start, end)
-    ).upper()
+    if any(word in context for word in WELD_WORDS):
+        return True
 
-    return any(word in context for word in WELD_WORDS)
+    if any(word in context for word in WEIGHT_WORDS):
+        return True
+
+    return False
 
 
 def is_number(text):
@@ -91,7 +111,9 @@ def extract_dimensions(words):
         if is_weld_spec(text):
             continue
 
-        # Diameter callouts like: 154 DIA HOLE / 281 DIA HOLE
+        if has_bad_context(words, i):
+            continue
+
         if is_number(text):
             next_1 = get_word(words, i + 1).upper()
             next_2 = get_word(words, i + 2).upper()
@@ -107,7 +129,6 @@ def extract_dimensions(words):
                 add_dimension(results, "diameter", raw_text, items)
                 continue
 
-        # Diameter callouts like: DIA 154
         if upper == "DIA" and i + 1 < len(words):
             next_text = get_word(words, i + 1)
 
@@ -120,46 +141,37 @@ def extract_dimensions(words):
                 )
                 continue
 
-        # Angles like 30°, 60°, 45°
         if re.fullmatch(r"\d+°", text):
             add_dimension(results, "angle", text, [item])
             continue
 
         if text in ["30", "45", "60", "90", "120", "180"]:
-            if not has_weld_context(words, i):
-                add_dimension(results, "angle", f"{text}°", [item])
+            add_dimension(results, "angle", f"{text}°", [item])
             continue
 
-        # Radius like 285.8R or R285.8
         if re.fullmatch(r"\d+(\.\d+)?R", upper) or re.fullmatch(r"R\d+(\.\d+)?", upper):
             add_dimension(results, "radius", text, [item])
             continue
 
-        # Feature size like 34 x 3 or 3 x 3
         if is_number(text) and i + 2 < len(words):
             middle = get_word(words, i + 1).lower()
             last = get_word(words, i + 2)
 
             if middle in ["x", "×"] and is_number(last):
-                if not has_weld_context(words, i):
-                    add_dimension(
-                        results,
-                        "feature_size",
-                        f"{text} x {last}",
-                        [item, words[i + 1], words[i + 2]]
-                    )
+                add_dimension(
+                    results,
+                    "feature_size",
+                    f"{text} x {last}",
+                    [item, words[i + 1], words[i + 2]]
+                )
                 continue
 
-        # Fraction dimensions like 3/8
         if re.fullmatch(r"\d+/\d+", text):
-            if not has_weld_context(words, i):
-                add_dimension(results, "fraction", text, [item])
+            add_dimension(results, "fraction", text, [item])
             continue
 
-        # Large linear dims like 1800 or 186
         if re.fullmatch(r"\d{3,5}", text):
-            if not has_weld_context(words, i):
-                add_dimension(results, "linear", text, [item])
+            add_dimension(results, "linear", text, [item])
             continue
 
     return results
