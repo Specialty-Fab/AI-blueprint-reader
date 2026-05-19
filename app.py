@@ -1,3 +1,5 @@
+import json
+
 import streamlit as st
 from PIL import Image
 
@@ -7,7 +9,6 @@ from parsers.dimensions import extract_dimensions
 from parsers.gdnt import extract_gdnt
 from exporters.job_traveler import build_job_traveler
 from utils.image_preprocess import preprocess_image
-from utils.pdf_loader import load_pdf
 
 st.set_page_config(
     page_title="AI Blueprint Reader",
@@ -15,33 +16,20 @@ st.set_page_config(
 )
 
 st.title("AI Blueprint Reader")
-st.caption("Upload a blueprint, review uncertain reads, edit fields, then export a job traveler.")
+st.caption("Upload a blueprint image, review uncertain reads, edit fields, then export a job traveler.")
 
 uploaded = st.file_uploader(
-    "Upload blueprint image or PDF",
-    type=["png", "jpg", "jpeg", "pdf"]
+    "Upload blueprint image",
+    type=["png", "jpg", "jpeg"]
 )
 
 if uploaded:
-
-    if uploaded.type == "application/pdf":
-        pages = load_pdf(uploaded)
-
-        page_number = st.selectbox(
-            "Select PDF page",
-            range(1, len(pages) + 1)
-        )
-
-        image = pages[page_number - 1].convert("RGB")
-
-    else:
-        image = Image.open(uploaded).convert("RGB")
+    image = Image.open(uploaded).convert("RGB")
 
     left_col, right_col = st.columns([1.2, 1])
 
     with left_col:
         st.subheader("Blueprint Preview")
-
         st.image(
             image,
             caption="Uploaded Blueprint",
@@ -51,11 +39,15 @@ if uploaded:
     with right_col:
         st.subheader("Extraction Summary")
 
-        with st.spinner("Cleaning image and reading blueprint..."):
+        try:
+            with st.spinner("Cleaning image and reading blueprint..."):
+                processed_image = preprocess_image(image)
+                words = run_ocr(processed_image)
 
-            processed_image = preprocess_image(image)
-
-            words = run_ocr(processed_image)
+        except Exception as error:
+            st.error("OCR failed. Check that Tesseract is installed and available.")
+            st.exception(error)
+            st.stop()
 
         low_confidence = [
             w for w in words
@@ -63,7 +55,8 @@ if uploaded:
         ]
 
         full_text = " ".join([
-            w["text"] for w in words
+            w.get("text", "")
+            for w in words
         ])
 
         st.metric("OCR Text Items", len(words))
@@ -164,10 +157,10 @@ if uploaded:
 
         st.download_button(
             "Download Reviewed JSON",
-            str(reviewed_data),
+            json.dumps(reviewed_data, indent=2),
             file_name="reviewed_extraction.json",
             mime="application/json"
         )
 
 else:
-    st.info("Upload a blueprint image or PDF to begin.")
+    st.info("Upload a blueprint image to begin.")
