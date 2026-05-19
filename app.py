@@ -1,7 +1,7 @@
 import json
 
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from ocr import run_ocr
 from parsers.title_block import extract_title_block
@@ -9,6 +9,40 @@ from parsers.dimensions import extract_dimensions
 from parsers.gdnt import extract_gdnt
 from exporters.job_traveler import build_job_traveler
 from utils.image_preprocess import preprocess_image
+
+
+def draw_review_box(image, item):
+    marked = image.convert("RGB").copy()
+    draw = ImageDraw.Draw(marked)
+
+    x = int(item.get("x", 0))
+    y = int(item.get("y", 0))
+    width = int(item.get("width", 0))
+    height = int(item.get("height", 0))
+
+    padding = 8
+
+    box = [
+        max(x - padding, 0),
+        max(y - padding, 0),
+        x + width + padding,
+        y + height + padding
+    ]
+
+    draw.rectangle(
+        box,
+        outline="red",
+        width=4
+    )
+
+    draw.text(
+        (box[0], max(box[1] - 22, 0)),
+        "Review this area",
+        fill="red"
+    )
+
+    return marked
+
 
 st.set_page_config(
     page_title="AI Blueprint Reader",
@@ -92,7 +126,7 @@ if uploaded:
 
     with tab_review:
         st.subheader("Review Required")
-        st.caption("These are OCR reads that may need a quick human check before export.")
+        st.caption("Click a review item to see where it appears on the processed image.")
 
         if low_confidence:
             st.warning(
@@ -117,10 +151,18 @@ if uploaded:
                     )
 
                     st.caption(
-                        f"Location on print: X {item.get('x', '')}, "
-                        f"Y {item.get('y', '')}, "
-                        f"Width {item.get('width', '')}, "
-                        f"Height {item.get('height', '')}"
+                        "The red box below shows where this OCR item was found."
+                    )
+
+                    marked_image = draw_review_box(
+                        processed_image,
+                        item
+                    )
+
+                    st.image(
+                        marked_image,
+                        caption=f"Location for review item {index}",
+                        use_container_width=True
                     )
 
                     approved = st.checkbox(
