@@ -1,80 +1,72 @@
 import re
 
 
-VALID_DIMENSION_PATTERNS = [
-
-    # decimal dimensions
-    r"\b\d+\.\d+\b",
-
-    # integer dimensions
-    r"\b\d+\b",
-
-    # fractions
-    r"\b\d+\s*/\s*\d+\b",
-
-    # diameter callouts
-    r"\b\d+\s*DIA\b",
-    r"\bDIA\s*\d+\b",
-
-    # radius
-    r"\b\d+(\.\d+)?R\b",
-    r"\bR\d+(\.\d+)?\b",
-
-    # angles
-    r"\b\d+\s*°\b",
-    r"\b\d+\s*DEG\b",
-
-    # x by x dimensions
-    r"\b\d+\s*x\s*\d+\b",
-
-    # plus minus tolerance
-    r"\b±\s*\d+\.\d+\b",
-]
-
-
-EXCLUDED_WORDS = [
-
+EXCLUDED_CONTEXT_WORDS = [
     "GMAW",
+    "GTAW",
     "WELD",
     "ROOT",
     "PASS",
+    "PASSES",
     "SEAL",
     "NOTE",
     "SEE",
     "MIN",
-    "REF",
-    "ITEM",
-    "TYP",
-    "REQD",
-    "REQUIRED",
 ]
 
 
-def is_real_dimension(text):
+def nearby_text(words, index, window=4):
+    start = max(index - window, 0)
+    end = min(index + window + 1, len(words))
 
+    return " ".join([
+        words[i].get("text", "")
+        for i in range(start, end)
+    ]).upper()
+
+
+def is_near_weld_callout(words, index):
+    context = nearby_text(words, index)
+
+    return any(
+        bad_word in context
+        for bad_word in EXCLUDED_CONTEXT_WORDS
+    )
+
+
+def is_real_dimension_text(text):
     text_upper = text.upper().strip()
 
     if len(text_upper) < 2:
         return False
 
-    for bad in EXCLUDED_WORDS:
-
-        if bad in text_upper:
-            return False
-
-    has_pattern = any(
-        re.search(pattern, text_upper)
-        for pattern in VALID_DIMENSION_PATTERNS
-    )
-
-    if not has_pattern:
+    # Remove obvious weld spec numbers like 3-6-79 and 3-6-102
+    if re.fullmatch(r"\d+-\d+-\d+", text_upper):
         return False
 
-    return True
+    # Remove bare item balloons / note numbers
+    if re.fullmatch(r"\d{1,2}", text_upper):
+        return False
+
+    patterns = [
+        r"\b\d+\.\d+\b",
+        r"\b\d+\s*DIA\b",
+        r"\bDIA\s*\d+\b",
+        r"\b\d+(\.\d+)?R\b",
+        r"\bR\d+(\.\d+)?\b",
+        r"\b\d+\s*°\b",
+        r"\b\d+\s*DEG\b",
+        r"\b\d+\s*/\s*\d+\b",
+        r"\b\d+\s*x\s*\d+\b",
+    ]
+
+    return any(
+        re.search(pattern, text_upper)
+        for pattern in patterns
+    )
 
 
 def classify_dimension(text):
-
     text_upper = text.upper()
 
     if "DIA" in text_upper:
@@ -96,36 +88,27 @@ def classify_dimension(text):
 
 
 def extract_dimensions(words):
-
     dimensions = []
 
-    for item in words:
-
-        raw_text = item.get(
-            "text",
-            ""
-        ).strip()
+    for index, item in enumerate(words):
+        raw_text = item.get("text", "").strip()
 
         if not raw_text:
             continue
 
-        if not is_real_dimension(raw_text):
+        if is_near_weld_callout(words, index):
+            continue
+
+        if not is_real_dimension_text(raw_text):
             continue
 
         dimensions.append({
-
             "type": classify_dimension(raw_text),
-
             "raw_text": raw_text,
-
             "x": item.get("x", 0),
-
             "y": item.get("y", 0),
-
             "width": item.get("width", 80),
-
             "height": item.get("height", 24),
-
             "confidence": item.get("confidence", 0)
         })
 
