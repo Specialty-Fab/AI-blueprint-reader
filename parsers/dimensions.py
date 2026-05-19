@@ -1,101 +1,132 @@
 import re
 
 
-def classify_dimension(text):
-    text_upper = text.upper()
+VALID_DIMENSION_PATTERNS = [
 
-    if "DIA" in text_upper or "Ø" in text_upper or "⌀" in text_upper:
-        return "diameter"
+    # decimal dimensions
+    r"\b\d+\.\d+\b",
 
-    if "R" in text_upper and re.search(r"\bR\s*\d+", text_upper):
-        return "radius"
+    # integer dimensions
+    r"\b\d+\b",
 
-    if "DEG" in text_upper or "°" in text_upper:
-        return "angle"
+    # fractions
+    r"\b\d+\s*/\s*\d+\b",
 
-    if re.search(r"\d+\s*/\s*\d+", text_upper):
-        return "fraction"
+    # diameter callouts
+    r"\b\d+\s*DIA\b",
+    r"\bDIA\s*\d+\b",
 
-    if re.search(r"\d+\.\d+", text_upper):
-        return "linear"
+    # radius
+    r"\b\d+(\.\d+)?R\b",
+    r"\bR\d+(\.\d+)?\b",
 
-    if re.search(r"\b\d+\b", text_upper):
-        return "numeric"
+    # angles
+    r"\b\d+\s*°\b",
+    r"\b\d+\s*DEG\b",
 
-    return "dimension"
+    # x by x dimensions
+    r"\b\d+\s*x\s*\d+\b",
+
+    # plus minus tolerance
+    r"\b±\s*\d+\.\d+\b",
+]
 
 
-def looks_like_dimension(text):
+EXCLUDED_WORDS = [
+
+    "GMAW",
+    "WELD",
+    "ROOT",
+    "PASS",
+    "SEAL",
+    "NOTE",
+    "SEE",
+    "MIN",
+    "REF",
+    "ITEM",
+    "TYP",
+    "REQD",
+    "REQUIRED",
+]
+
+
+def is_real_dimension(text):
+
     text_upper = text.upper().strip()
 
-    patterns = [
-        r"\b\d+\.\d+\b",
-        r"\b\d+\s*/\s*\d+\b",
-        r"\b\d+\s*(?:°|DEG)\b",
-        r"\b\d+\s*DIA\b",
-        r"\bDIA\s*\d+\b",
-        r"\b\d+\s*R\b",
-        r"\bR\s*\d+\b",
-        r"\b\d+\s*\+\s*/\s*-\s*\d+\b",
-        r"\b\d+\s*-\s*\d+\b",
-    ]
+    if len(text_upper) < 2:
+        return False
 
-    if any(re.search(pattern, text_upper) for pattern in patterns):
-        return True
+    for bad in EXCLUDED_WORDS:
 
-    if any(token in text_upper for token in ["DIA", "HOLE", "R", "TYP", "REF"]):
-        return bool(re.search(r"\d", text_upper))
+        if bad in text_upper:
+            return False
 
-    return False
+    has_pattern = any(
+        re.search(pattern, text_upper)
+        for pattern in VALID_DIMENSION_PATTERNS
+    )
+
+    if not has_pattern:
+        return False
+
+    return True
 
 
-def extract_dimensions(text_or_words):
-    results = []
+def classify_dimension(text):
 
-    if isinstance(text_or_words, list):
-        for item in text_or_words:
-            raw_text = item.get("text", "").strip()
+    text_upper = text.upper()
 
-            if not raw_text:
-                continue
+    if "DIA" in text_upper:
+        return "diameter"
 
-            if looks_like_dimension(raw_text):
-                results.append({
-                    "type": classify_dimension(raw_text),
-                    "raw_text": raw_text,
-                    "x": item.get("x", 0),
-                    "y": item.get("y", 0),
-                    "width": item.get("width", 80),
-                    "height": item.get("height", 24),
-                    "confidence": item.get("confidence", 0)
-                })
+    if "°" in text_upper or "DEG" in text_upper:
+        return "angle"
 
-        return results
+    if "R" in text_upper:
+        return "radius"
 
-    text = text_or_words
+    if "X" in text_upper:
+        return "feature_size"
 
-    patterns = [
-        ("linear", r"\b\d+\.\d+\s*(?:±|\+/-)?\s*\.?\d*\b"),
-        ("diameter", r"(?:Ø|⌀|DIA)\s*\d+\.\d+|\b\d+\s*DIA\b"),
-        ("radius", r"\bR\s*\d+\.\d+|\bR\s*\d+\b"),
-        ("angle", r"\b\d+\s*(?:°|DEG)\b"),
-        ("fraction", r"\b\d+\s*/\s*\d+\b"),
-        ("edge_break", r"\.?\d+\s*-\s*\.?\d+"),
-    ]
+    if "/" in text_upper:
+        return "fraction"
 
-    for dim_type, pattern in patterns:
-        for match in re.findall(pattern, text, re.IGNORECASE):
-            if isinstance(match, tuple):
-                match = " ".join(match)
+    return "linear"
 
-            results.append({
-                "type": dim_type,
-                "raw_text": str(match).strip(),
-                "x": 0,
-                "y": 0,
-                "width": 80,
-                "height": 24,
-                "confidence": 0
-            })
 
-    return results
+def extract_dimensions(words):
+
+    dimensions = []
+
+    for item in words:
+
+        raw_text = item.get(
+            "text",
+            ""
+        ).strip()
+
+        if not raw_text:
+            continue
+
+        if not is_real_dimension(raw_text):
+            continue
+
+        dimensions.append({
+
+            "type": classify_dimension(raw_text),
+
+            "raw_text": raw_text,
+
+            "x": item.get("x", 0),
+
+            "y": item.get("y", 0),
+
+            "width": item.get("width", 80),
+
+            "height": item.get("height", 24),
+
+            "confidence": item.get("confidence", 0)
+        })
+
+    return dimensions
